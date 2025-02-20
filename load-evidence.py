@@ -51,61 +51,13 @@ def do_system_command(command, stdin=None, env={}):
     else:
         stderr = stderr.decode()
     return stdout, stderr, return_code
-
-def summary_file(input_filepath, input_root, csv_writer, tmp_directory, remove_source=False):
-    relative_path = None
-    if input_root:
-        relative_path = os.path.dirname(os.path.relpath(input_filepath, input_root))
-    filename = os.path.basename(input_filepath)
-
-    res, stdout, stderr, code, tmp_filepath, extension = process_file(input_filepath, tmp_directory, root=input_root, copy_unknown_file=False, remove_source=False)
-    filepath = input_filepath
-    if tmp_filepath and os.path.exists(tmp_filepath):
-        filepath = tmp_filepath
-    size = None
-    mimetype = None
-    md5_sum = None
-    if os.path.isfile(filepath):
-        size = os.path.getsize(filepath)
-        mimetype = magic.from_file(filepath, mime=True)
-        md5_sum = md5sum(filepath)
-    csv_writer.writerow([input_filepath, relative_path, filename, extension, tmp_filepath, mimetype, size, md5_sum, code, not res, stdout if not res else '', stderr if not res else ''])
-    if res:
-        if tmp_filepath and os.path.exists(tmp_filepath):
-            if os.path.isdir(tmp_filepath):
-                summary_directory(tmp_filepath, tmp_directory, csv_writer, tmp_directory, remove_source=True)
-            else:
-                os.unlink(tmp_filepath)
-
-def summary_directory(input_directory, input_root, csv_writer, tmp_directory, remove_source=False):
-    for root, dir_list, file_list in os.walk(input_directory):
-        for filename in file_list:
-            filepath = os.path.join(root, filename)
-            summary_file(filepath, input_root, csv_writer, tmp_directory, remove_source=remove_source)
-
-def summary(target, output_filepath=None, tmp_directory=None, remove_source=False):
-    if not output_filepath:
-        output_filepath = f'summary_{datetime.now().strftime("%Y-%m-%d_%H%M%S")}.csv'
-    with open(output_filepath, 'w') as f:
-        csv_writer = csv.writer(f, delimiter=',')
-        csv_writer.writerow(['Input Full Path', 'Input Path', 'Input File Name', 'Input File Extension', 'Output Full Path', 'Mime Type', 'Size', 'MD5', 'Code', 'Error', 'Stdout', 'Stderr'])
-        if not tmp_directory:
-             tmp_directory = tempfile.TemporaryDirectory(dir=os.path.dirname(__file__)).name
-        if not os.path.exists(tmp_directory):
-             os.makedirs(tmp_directory)
-        count = 0
-        try:
-            if os.path.isfile(target):
-                summary_file(target, None, csv_writer, tmp_directory, remove_source=False)
-            else:
-                summary_directory(target, target, csv_writer, tmp_directory, remove_source=False)
-        except:
-            traceback.print_exc()
-        shutil.rmtree(tmp_directory)
-        print(f'Data written to {output_filepath}')
         
 def extract_zst(filepath, output_dir, relative_path, filename):
-    output_directory = os.path.join(output_dir, relative_path)
+    if relative_path:
+        output_directory = os.path.join(output_dir, relative_path)
+    else:
+        output_directory = output_dir
+    
     zstd_path = '/usr/bin/zstd'
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
@@ -118,7 +70,10 @@ def extract_zst(filepath, output_dir, relative_path, filename):
         return False, stdout, stderr, code, output_filepath, 'zst'
 
 def extract_rar(filepath, output_dir, relative_path, filename):
-    output_directory = os.path.join(output_dir, relative_path, filename[:-4])
+    if relative_path:
+        output_directory = os.path.join(output_dir, relative_path, filename[:-4])
+    else:
+        output_directory = os.path.join(output_dir, filename[:-4])
     bin_path = '/usr/bin/tar'
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
@@ -130,7 +85,10 @@ def extract_rar(filepath, output_dir, relative_path, filename):
         return False, stdout, stderr, code, output_directory, 'rar'
 
 def extract_zip(filepath, output_dir, relative_path, filename):
-    output_directory = os.path.join(output_dir, relative_path, filename[:-4])
+    if relative_path:
+        output_directory = os.path.join(output_dir, relative_path, filename[:-4])
+    else:
+        output_directory = os.path.join(output_dir, filename[:-4])
     bin_path = '/usr/bin/unzip'
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
@@ -142,16 +100,20 @@ def extract_zip(filepath, output_dir, relative_path, filename):
         return False, stdout, stderr, code, output_directory, 'zip'
 
 def extract_7z(filepath, output_dir, relative_path, filename):
-    output_directory = os.path.join(output_dir, relative_path, filename[:-3])
+    if relative_path:
+        output_directory = os.path.join(output_dir, relative_path, filename[:-3])
+    else:
+        output_directory = os.path.join(output_dir, filename[:-3])
+
     bin_path = '/usr/bin/7z'
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
-    stdout, stderr, code = do_system_command([bin_path, '-y', '-o', output_directory, 'x', filepath])
+    stdout, stderr, code = do_system_command([bin_path, '-y', f'-o{output_directory}', 'x', filepath])
     if code == 0:
-        return True, stdout, stderr, code, output_directory, 'zip'
+        return True, stdout, stderr, code, output_directory, '7z'
     else:
         print(stderr)
-        return False, stdout, stderr, code, output_directory, 'zip'
+        return False, stdout, stderr, code, output_directory, '7z'
 
 def extract_gz(filepath, output_dir, relative_path, filename):
     output_directory = os.path.join(output_dir, relative_path)
@@ -194,6 +156,7 @@ def process_file(input_filepath, output_directory, root=None, remove_source=Fals
     output_filepath = None
     extension = filename.split('.')[-1]
     original_extension = extension
+    # TODO: use mimetype
     mimetype = magic.from_file(input_filepath, mime=True)
 
     if (not extension_whitelist or original_extension in extension_whitelist) and (not extension_blacklist or original_extension not in extension_blacklist):
@@ -216,46 +179,69 @@ def process_file(input_filepath, output_directory, root=None, remove_source=Fals
         os.unlink(input_filepath)
     return res, stdout, stderr, code, output_filepath, extension
 
-def extract_file(input_filepath, input_root, output_directory, remove_source=False):
-    res, stdout, stderr, code, output_filepath, extension = process_file(input_filepath, output_directory, root=input_root, copy_unknown_file=False, remove_source=False)
-    if res and output_filepath and os.path.isdir(output_filepath):
-        extract_directory(output_filepath, output_directory, output_directory, remove_source=True)
+def extract_file(input_filepath, input_root, output_directory, summary_file=None, remove_source=False):
+    if summary_file:
+        relative_path = None
+        if input_root:
+            relative_path = os.path.dirname(os.path.relpath(input_filepath, input_root))
+        filename = os.path.basename(input_filepath)
+        size = os.path.getsize(input_filepath)
+        mimetype = magic.from_file(input_filepath, mime=True)
+        md5_sum = md5sum(input_filepath)
+        
+    res, stdout, stderr, code, output_filepath, extension = process_file(input_filepath, output_directory, root=input_root, copy_unknown_file=False, remove_source=remove_source)
+    
+    if summary_file:
+        summary_file.writerow([input_filepath, relative_path, filename, extension, output_filepath, mimetype, size, md5_sum, code, not res, stdout if not res else '', stderr if not res else ''])
 
-def extract_directory(input_directory, input_root, tmp_directory, remove_source=False):
+    if res and output_filepath:
+        if os.path.isdir(output_filepath):
+            extract_directory(output_filepath, output_directory, output_directory, summary_file=summary_file, remove_source=True)
+        else:
+            extract_file(output_filepath, input_root, output_directory, summary_file=summary_file, remove_source=True)
+
+def extract_directory(input_directory, input_root, tmp_directory, summary_file=None, remove_source=False):
     for root, dir_list, file_list in os.walk(input_directory):
         for filename in file_list:
             filepath = os.path.join(root, filename)
-            extract_file(filepath, input_root, tmp_directory, remove_source=remove_source)
+            extract_file(filepath, input_root, tmp_directory, summary_file=summary_file, remove_source=remove_source)
 
-def extract(target, output_directory=None):
+def extract(target, output_directory=None, summary_filepath=None, remove_source=False):
+    timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
     if not output_directory:
-        output_directory = f'extracted_{datetime.now().strftime("%Y-%m-%d_%H%M%S")}'
+        output_directory = f'extracted_{timestamp}'
     if not os.path.exists(output_directory):
         os.makedirs(output_directory)
-    if os.path.isfile(target):
-        extract_file(target, None, output_directory, remove_source=False)
-    else:
-        extract_directory(target, target, output_directory, remove_source=False)
-    print(f'Data extracted to {output_directory}')
+    
+    if not summary_filepath:
+        summary_filepath = f'summary_{timestamp}.csv'
+    
+    with open(summary_filepath, 'w') as fd:
+        summary_file = csv.writer(fd, delimiter=',')
+        summary_file.writerow(['Input Full Path', 'Input Path', 'Input File Name', 'Input File Extension', 'Output Full Path', 'Mime Type', 'Size', 'MD5', 'Code', 'Error', 'Stdout', 'Stderr'])
+
+        if os.path.isfile(target):
+            extract_file(target, None, output_directory, summary_file=summary_file, remove_source=remove_source)
+        else:
+            extract_directory(target, target, output_directory, summary_file=summary_file, remove_source=remove_source)
+    return output_directory, summary_filepath
+    
 
 if __name__ == '__main__':
     # Parse commmand line arguments
     parser = argparse.ArgumentParser()
 
     parser.add_argument('-o', '--output', help='Output path')
-    parser.add_argument('input', nargs=1, help='My first positional argument')
-    parser.add_argument('action', nargs='?', help='My first positional argument')
+    # parser.add_argument('-c', '--count', action='store_true', help='Count size of objects')
+    parser.add_argument('-s', '--summary', help='Summary file path')
+    parser.add_argument('input', nargs='+', help='My first positional argument')
 
     args = parser.parse_args()
-    action = 'count'
-    if args.action:
-        action = args.action.lower()
-    input_filepath = args.input[0]
 
-    if action == 'count':
-        count_extension(input_filepath)
-    elif action == 'extract':
-        extract(input_filepath, output_directory=args.output)
-    elif action == 'summary':
-        summary(input_filepath, output_filepath=args.output)
+    for target in args.input:
+        print(f'Loading evidence from {target}')
+        output_directory, summary_filepath = extract(target, output_directory=args.output, summary_filepath=args.summary)
+    print(f'Evidence loaded to {output_directory}')
+    if summary_filepath:
+        print(f'Summary written to {summary_filepath}')
 
