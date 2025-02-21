@@ -20,6 +20,8 @@ with open('mimetype.json', 'r') as fd:
                 COMMON_EXTENSION_LIST.append(extension.lower())
 COMMON_EXTENSION_LIST = sorted([X if X.startswith('.') else f'.{X}' for X in COMMON_EXTENSION_LIST], key=len)[::-1]
 
+IMPORTED_FILE = []
+
 def compute_md5sum(filepath):
     with open(filepath, 'rb') as f:
         file_hash = hashlib.md5()
@@ -212,6 +214,9 @@ def extract_bz2(filepath, output_dir, relative_path, filename, extension, basena
         return False, stdout, stderr, code, output_directory
 
 def process_file(input_filepath, output_root, input_root=None, remove_source=False, merge_dir=False, mimetype_whitelist=[], mimetype_blacklist=[]):
+    '''
+    Process file depending on the mimetype. If no processing is needed, then res is None
+    '''
     print(f'Processing {input_filepath}')
     if input_root:
         relative_path = os.path.dirname(os.path.relpath(input_filepath, input_root))
@@ -260,30 +265,36 @@ def process_file(input_filepath, output_root, input_root=None, remove_source=Fal
             os.unlink(input_filepath)
     return res, stdout, stderr, code, output_filepath, extension
 
-def extract_file(input_filepath, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, hash_max_size=None, merge_dir=False, keep_empty_dir=False):
+def extract_file(input_filepath, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, hash_max_size=None, merge_dir=False, keep_empty_dir=False, unique=False):
     if summary_file:
         filename = os.path.basename(input_filepath)
         mimetype = magic.from_file(input_filepath, mime=True)
+    if summary_file or unique:
         size = os.path.getsize(input_filepath)
         md5sum = None
         if not hash_max_size or size <= hash_max_size:
             md5sum = compute_md5sum(input_filepath)
-        
+            if unique and md5sum in IMPORTED_FILE:
+                print(f'File {input_filepath} already imported: skipping duplicate')
+                return
+    # res = True if input file was successfully processed, False if processing failed and None if no processing was needed
     res, stdout, stderr, code, output_path, extension = process_file(input_filepath, output_root, input_root=input_root, merge_dir=merge_dir, remove_source=remove_source)
-    
+    if res != False and unique:
+        IMPORTED_FILE.append(md5sum)
+
     original_filepath = input_filepath
     if parent_in and parent_out:
         original_filepath = input_filepath.replace(parent_out, parent_in)
     if summary_file:
-        summary_file.writerow([os.path.normpath(original_filepath), filename, extension, output_path, mimetype, size, md5sum, code, '' if res is None else not res, stdout.strip() if not res else '', stderr.strip() if not res else ''])
+        summary_file.writerow([os.path.normpath(original_filepath), filename, extension, output_path, mimetype, size, md5sum, code, '' if res is None else not res, stdout.strip() if not res and stdout else '', stderr.strip() if not res and stdout else ''])
 
     if res and output_path:
         if os.path.isdir(output_path):
-            extract_directory(output_path, input_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir)
+            extract_directory(output_path, input_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
         else:
-            extract_file(output_path, input_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir)
+            extract_file(output_path, input_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
 
-def extract_directory(input_directory, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, merge_dir=False, keep_empty_dir=False):
+def extract_directory(input_directory, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
     if keep_empty_dir and os.path.isdir(input_directory) and not os.listdir(input_directory):
         relative_path = os.path.relpath(input_directory, input_root)
         output_directory = os.path.normpath(os.path.join(output_root, relative_path))
@@ -292,11 +303,11 @@ def extract_directory(input_directory, input_root, output_root, parent_in=None, 
     for child in os.listdir(input_directory):
         child_path = os.path.join(input_directory, child)
         if os.path.isdir(child_path):
-            extract_directory(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir)
+            extract_directory(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
         else:
-            extract_file(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir)
+            extract_file(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
 
-def extract(target, output_directory=None, summary_filepath=None, remove_source=False, merge_dir=False, keep_empty_dir=False):
+def extract(target, output_directory=None, summary_filepath=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
     timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
     if not output_directory:
         output_directory = f'extracted_{timestamp}'
@@ -311,9 +322,9 @@ def extract(target, output_directory=None, summary_filepath=None, remove_source=
         summary_file.writerow(['Input Full Path', 'Input File Name', 'Input File Extension', 'Output Full Path', 'Mime Type', 'Size', 'MD5', 'Code', 'Error', 'Stdout', 'Stderr'])
 
         if os.path.isfile(target):
-            extract_file(target, None, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir)
+            extract_file(target, None, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
         else:
-            extract_directory(target, target, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir)
+            extract_directory(target, target, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
     return output_directory, summary_filepath
     
 
@@ -326,13 +337,14 @@ if __name__ == '__main__':
     # merge feature is unsecure at this time - do not use
     # parser.add_argument('-m', '--merge_dir', action='store_true', help='Merge directory in case of name conflict')
     parser.add_argument('-s', '--summary', help='Summary file path')
-    parser.add_argument('input', nargs='+', help='My first positional argument')
+    parser.add_argument('-u', '--unique', action='store_true', help='Don\'t import duplicated files')
+    parser.add_argument('input', nargs='+', help='File or folder to import')
 
     args = parser.parse_args()
 
     for target in args.input:
         print(f'Loading evidence from {target}')
-        output_directory, summary_filepath = extract(target, output_directory=args.output, summary_filepath=args.summary, merge_dir=args.merge_dir, keep_empty_dir=args.keep_empty_dir)
+        output_directory, summary_filepath = extract(target, output_directory=args.output, summary_filepath=args.summary, keep_empty_dir=args.keep_empty_dir, unique=args.unique)
     print(f'Evidence loaded to {output_directory}')
     if summary_filepath:
         print(f'Summary written to {summary_filepath}')
