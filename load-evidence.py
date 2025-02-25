@@ -260,7 +260,8 @@ def process_file(input_filepath, output_root, input_root=None, remove_source=Fal
                 output_filepath = os.path.normpath(os.path.join(output_root, basename))
             if output_filepath != os.path.normpath(input_filepath):
                 output_filepath = get_next_available_path([output_root, relative_path, basename], extension=extension)
-                os.path.makesdir(os.path.dirname(output_filepath))
+                if not os.path.exists(os.path.dirname(output_filepath)):
+                    os.makedirs(os.path.dirname(output_filepath))
                 shutil.copyfile(input_filepath, output_filepath)
         if remove_source:
             os.unlink(input_filepath)
