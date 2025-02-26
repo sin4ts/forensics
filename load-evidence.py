@@ -27,19 +27,6 @@ COMMON_EXTENSION_LIST = sorted([X if X.startswith('.') else f'.{X}' for X in COM
 
 IMPORTED_FILE = []
 
-def count_extension(input_filepath):
-    count = {}
-    print(input_filepath)
-    for root, dir_list, file_list in os.walk(input_filepath):
-        for filename in file_list:
-            current_filepath = os.path.join(root, filename)
-            extension = filename.split('.')[-1]
-            if not extension in count.keys():
-                count[extension] = 0
-            count[extension] += 1
-    for key, value in count.items():
-        print(f'{key}: {value}')
-
 def get_next_available_path(path, delimiter='_', mkdir_parent=False, mkdir=False, extension=None, merge_dir=False):
     '''
     check if path exists and increment the base name if needed
@@ -195,7 +182,7 @@ def process_file(input_filepath, output_root, input_root=None, remove_source=Fal
     '''
     Process file depending on the mimetype. If no processing is needed, then res is None
     '''
-    print(f'Processing {input_filepath}')
+    logging.info(f'Processing {input_filepath}')
     if input_root:
         relative_path = os.path.dirname(os.path.relpath(input_filepath, input_root))
     else:
@@ -237,11 +224,7 @@ def process_file(input_filepath, output_root, input_root=None, remove_source=Fal
             else:
                 output_filepath = os.path.normpath(os.path.join(output_root, basename))
             if output_filepath != os.path.normpath(input_filepath):
-                print(output_root)
-                print(relative_path)
-                print(basename)
                 output_filepath = get_next_available_path([output_root, relative_path, basename], extension=extension)
-                print(output_filepath)
                 if not os.path.exists(os.path.dirname(output_filepath)):
                     os.makedirs(os.path.dirname(output_filepath))
                 shutil.copyfile(input_filepath, output_filepath)
@@ -354,13 +337,13 @@ if __name__ == '__main__':
         init_logging(CONFIG['general.log_directory'], level=logging.WARNING)
     else:
         init_logging(CONFIG['general.log_directory'], level=logging.INFO)
- 
+
     for target in args.input:
-        print(f'Loading evidence from {target}')
+        logging.info(f'Loading evidence from {target}')
         output_directory, summary_filepath = extract(target, output_directory=args.output, summary_filepath=args.summary, keep_empty_dir=args.keep_empty_dir, unique=args.unique)
-    print(f'Evidence loaded to {output_directory}')
+    logging.info(f'Evidence loaded to {output_directory}')
     if summary_filepath:
-        print(f'Summary written to {summary_filepath}')
+        logging.info(f'Summary written to {summary_filepath}')
 
 
 
