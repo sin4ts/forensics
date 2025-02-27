@@ -80,11 +80,11 @@ def explode_filepath(filepath):
             filename = basename[:-len(extension)]
     return dirname, basename, filename, extension
         
-def extract_zst(filepath, output_dir, relative_path, filename, extension, basename, merge_dir=False):
+def extract_zst(filepath, output_root, relative_path, filename, extension, basename, merge_dir=False):
     '''
     compression only
     '''
-    output_filepath = get_next_available_path([output_dir, relative_path, filename], mkdir_parent=True, merge_dir=merge_dir)
+    output_filepath = get_next_available_path([output_root, relative_path, filename], mkdir_parent=True, merge_dir=merge_dir)
     
     stdout, stderr, code = utils.do_system_command([CONFIG['bin.zstd'], '-d', '-f', '-o', output_filepath, filepath])
     if code == 0:
@@ -93,11 +93,11 @@ def extract_zst(filepath, output_dir, relative_path, filename, extension, basena
         print(stderr)
         return False, stdout, stderr, code, output_filepath
 
-def extract_rar(filepath, output_dir, relative_path, filename, extension, basename, merge_dir=False):
+def extract_rar(filepath, output_root, relative_path, filename, extension, basename, merge_dir=False):
     '''
     archiving and compression
     '''
-    output_directory = get_next_available_path([output_dir, relative_path, filename], mkdir=True, merge_dir=merge_dir)
+    output_directory = get_next_available_path([output_root, relative_path, filename], mkdir=True, merge_dir=merge_dir)
     stdout, stderr, code = utils.do_system_command([CONFIG['bin.tar'], 'xvf', filepath, '-C', output_directory])
     if code == 0:
         return True, stdout, stderr, code, output_directory
@@ -105,11 +105,11 @@ def extract_rar(filepath, output_dir, relative_path, filename, extension, basena
         print(stderr)
         return False, stdout, stderr, code, output_directory
 
-def extract_zip(filepath, output_dir, relative_path, filename, extension, basename, merge_dir=False):
+def extract_zip(filepath, output_root, relative_path, filename, extension, basename, merge_dir=False):
     '''
     archiving and compression
     '''
-    output_directory = get_next_available_path([output_dir, relative_path, filename], mkdir=True, merge_dir=merge_dir)
+    output_directory = get_next_available_path([output_root, relative_path, filename], mkdir=True, merge_dir=merge_dir)
     stdout, stderr, code = utils.do_system_command([CONFIG['bin.unzip'], '-o', '-d', output_directory, filepath])
     if code == 0:
         return True, stdout, stderr, code, output_directory
@@ -118,11 +118,11 @@ def extract_zip(filepath, output_dir, relative_path, filename, extension, basena
 
         return False, stdout, stderr, code, output_directory
 
-def extract_7z(filepath, output_dir, relative_path, filename, extension, basename, merge_dir=False):
+def extract_7z(filepath, output_root, relative_path, filename, extension, basename, merge_dir=False):
     '''
     archiving and compression
     '''
-    output_directory = get_next_available_path([output_dir, relative_path, filename], mkdir=True, merge_dir=merge_dir)
+    output_directory = get_next_available_path([output_root, relative_path, filename], mkdir=True, merge_dir=merge_dir)
     stdout, stderr, code = utils.do_system_command([CONFIG['bin.sevenz'], '-y', f'-o{output_directory}', 'x', filepath])
     if code == 0:
         return True, stdout, stderr, code, output_directory
@@ -130,11 +130,11 @@ def extract_7z(filepath, output_dir, relative_path, filename, extension, basenam
         print(stderr)
         return False, stdout, stderr, code, output_directory
 
-def extract_tar(filepath, output_dir, relative_path, filename, extension, basename, merge_dir=False):
+def extract_tar(filepath, output_root, relative_path, filename, extension, basename, merge_dir=False):
     '''
     archiving only
     '''
-    output_directory = get_next_available_path([output_dir, relative_path, filename], mkdir=True, merge_dir=merge_dir)
+    output_directory = get_next_available_path([output_root, relative_path, filename], mkdir=True, merge_dir=merge_dir)
     stdout, stderr, code = utils.do_system_command([CONFIG['bin.tar'], 'xvf', filepath, '-C', output_directory])
     if code == 0:
         return True, stdout, stderr, code, output_directory
@@ -142,11 +142,11 @@ def extract_tar(filepath, output_dir, relative_path, filename, extension, basena
         print(stderr)
         return False, stdout, stderr, code, output_directory
     
-def extract_gz(filepath, output_dir, relative_path, filename, extension, basename, merge_dir=False):
+def extract_gz(filepath, output_root, relative_path, filename, extension, basename, merge_dir=False):
     '''
     compression only
     '''
-    output_directory = get_next_available_path([output_dir, relative_path, filename], mkdir=True, merge_dir=merge_dir)
+    output_directory = get_next_available_path([output_root, relative_path, filename], mkdir=True, merge_dir=merge_dir)
     stdout, stderr, code = utils.do_system_command([CONFIG['bin.tar'], 'xzvf', filepath, '-C', output_directory])
     if code == 0:
         return True, stdout, stderr, code, output_directory
@@ -154,11 +154,11 @@ def extract_gz(filepath, output_dir, relative_path, filename, extension, basenam
         print(stderr)
         return False, stdout, stderr, code, output_directory
 
-def extract_tgz(filepath, output_dir, relative_path, filename, extension, basename, merge_dir=False):
+def extract_tgz(filepath, output_root, relative_path, filename, extension, basename, merge_dir=False):
     '''
     archiving and compression
     '''
-    output_directory = get_next_available_path([output_dir, relative_path, filename], mkdir=True, merge_dir=merge_dir)
+    output_directory = get_next_available_path([output_root, relative_path, filename], mkdir=True, merge_dir=merge_dir)
     stdout, stderr, code = utils.do_system_command([CONFIG['bin.tar'], 'xzvf', filepath, '-C', output_directory])
     if code == 0:
         return True, stdout, stderr, code, output_directory
@@ -166,11 +166,11 @@ def extract_tgz(filepath, output_dir, relative_path, filename, extension, basena
         print(stderr)
         return False, stdout, stderr, code, output_directory
 
-def extract_bz2(filepath, output_dir, relative_path, filename, extension, basename, merge_dir=False):
+def extract_bz2(filepath, output_root, relative_path, filename, extension, basename, merge_dir=False):
     '''
     archiving and compression
     '''
-    output_directory = get_next_available_path([output_dir, relative_path, filename], mkdir=True, merge_dir=merge_dir)
+    output_directory = get_next_available_path([output_root, relative_path, filename], mkdir=True, merge_dir=merge_dir)
     stdout, stderr, code = utils.do_system_command([CONFIG['bin.tar'], 'xjvf', filepath, '-C', output_directory])
     if code == 0:
         return True, stdout, stderr, code, output_directory
@@ -182,7 +182,7 @@ def process_file(input_filepath, output_root, input_root=None, remove_source=Fal
     '''
     Process file depending on the mimetype. If no processing is needed, then res is None
     '''
-    logging.info(f'Processing {input_filepath}')
+    logging.info(f'Processing {os.path.normpath(input_filepath)}')
     if input_root:
         relative_path = os.path.dirname(os.path.relpath(input_filepath, input_root))
     else:
@@ -218,6 +218,7 @@ def process_file(input_filepath, output_root, input_root=None, remove_source=Fal
         elif mimetype == 'application/java-archive':
             pass
 
+        # copy raw file
         if res is None:
             if relative_path:
                 output_filepath = os.path.normpath(os.path.join(output_root, relative_path, basename))
@@ -232,7 +233,10 @@ def process_file(input_filepath, output_root, input_root=None, remove_source=Fal
             os.unlink(input_filepath)
     return res, stdout, stderr, code, output_filepath
 
-def extract_file(input_filepath, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, hash_max_size=None, merge_dir=False, keep_empty_dir=False, unique=False):
+def process_file_recursively(input_filepath, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, hash_max_size=None, merge_dir=False, keep_empty_dir=False, unique=False):
+    '''
+    input_root is None if there is only 1 file to process overall'''
+    error_number = 0
     already_processed = False
     if summary_file:
         mimetype = magic.from_file(input_filepath, mime=True)
@@ -264,13 +268,18 @@ def extract_file(input_filepath, input_root, output_root, parent_in=None, parent
     if summary_file:
         summary_file.writerow([os.path.normpath(original_filepath), filename, extension, output_path, mimetype, size, md5sum, code, '' if res is None else not res, stdout.strip() if not res and stdout else '', stderr.strip() if not res and stdout else ''])
 
+    if res == False:
+        res += 1
+    
     if res and output_path:
         if os.path.isdir(output_path):
-            extract_directory(output_path, input_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_directory(output_path, output_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
         else:
-            extract_file(output_path, input_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_file_recursively(output_path, output_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+    return error_number
 
-def extract_directory(input_directory, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
+def process_directory(input_directory, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
+    error_number = 0
     if keep_empty_dir and os.path.isdir(input_directory) and not os.listdir(input_directory):
         relative_path = os.path.relpath(input_directory, input_root)
         output_directory = os.path.normpath(os.path.join(output_root, relative_path))
@@ -279,12 +288,15 @@ def extract_directory(input_directory, input_root, output_root, parent_in=None, 
     for child in os.listdir(input_directory):
         child_path = os.path.join(input_directory, child)
         if os.path.isdir(child_path):
-            extract_directory(child_path, output_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_directory(child_path, input_directory, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
         else:
-            extract_file(child_path, output_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_file_recursively(child_path, input_directory, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+    return error_number
 
-def extract(target, output_directory=None, summary_filepath=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
+def process_target(target, output_directory=None, summary_filepath=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
     global CONFIG
+
+    error_number = 0
 
     timestamp = datetime.now().strftime('%Y-%m-%d_%H%M%S')
     if not output_directory:
@@ -300,10 +312,10 @@ def extract(target, output_directory=None, summary_filepath=None, remove_source=
         summary_file.writerow(['Input Full Path', 'Input File Name', 'Input File Extension', 'Output Full Path', 'Mime Type', 'Size', 'MD5', 'Code', 'Error', 'Stdout', 'Stderr'])
 
         if os.path.isfile(target):
-            extract_file(target, None, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_file_recursively(target, None, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
         else:
-            extract_directory(target, target, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
-    return output_directory, summary_filepath
+            error_number += process_directory(target, target, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+    return output_directory, summary_filepath, error_number
     
 
 if __name__ == '__main__':
@@ -338,12 +350,16 @@ if __name__ == '__main__':
     else:
         init_logging(CONFIG['general.log_directory'], level=logging.INFO)
 
+    error_number = 0
     for target in args.input:
         logging.info(f'Loading evidence from {target}')
-        output_directory, summary_filepath = extract(target, output_directory=args.output, summary_filepath=args.summary, keep_empty_dir=args.keep_empty_dir, unique=args.unique)
+        output_directory, summary_filepath, target_error_number = process_target(target, output_directory=args.output, summary_filepath=args.summary, keep_empty_dir=args.keep_empty_dir, unique=args.unique)
+        error_number += target_error_number
     logging.info(f'Evidence loaded to {output_directory}')
     if summary_filepath:
         logging.info(f'Summary written to {summary_filepath}')
+    if error_number:
+        logging.error(f'{error_number} occured during processing')
 
 
 
