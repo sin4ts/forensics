@@ -178,15 +178,18 @@ def extract_bz2(filepath, output_root, relative_path, filename, extension, basen
         print(stderr)
         return False, stdout, stderr, code, output_directory
 
-def process_file(input_filepath, output_root, input_root=None, remove_source=False, merge_dir=False, mimetype_whitelist=[], mimetype_blacklist=[]):
+def process_file(input_filepath, output_root, input_root=None, original_filepath=None, remove_source=False, merge_dir=False, mimetype_whitelist=[], mimetype_blacklist=[]):
     '''
     Process file depending on the mimetype. If no processing is needed, then res is None
     '''
-    logging.info(f'Processing {os.path.normpath(input_filepath)}')
+    if not original_filepath:
+        original_filepath = input_filepath
+    logging.info(f'Processing {os.path.normpath(original_filepath)}')
     if input_root:
         relative_path = os.path.dirname(os.path.relpath(input_filepath, input_root))
     else:
         relative_path = None
+
     # here filename is basename without the extension
     _, basename, filename, extension = explode_filepath(input_filepath)
     res = None
@@ -238,6 +241,9 @@ def process_file_recursively(input_filepath, input_root, output_root, parent_in=
     input_root is None if there is only 1 file to process overall'''
     error_number = 0
     already_processed = False
+    original_filepath = input_filepath
+    if parent_in and parent_out:
+        original_filepath = input_filepath.replace(parent_out, parent_in)
     if summary_file:
         mimetype = magic.from_file(input_filepath, mime=True)
         _, filename, _, extension = explode_filepath(input_filepath)
@@ -247,12 +253,13 @@ def process_file_recursively(input_filepath, input_root, output_root, parent_in=
         if not hash_max_size or size <= hash_max_size:
             md5sum = utils.compute_md5sum(input_filepath)
             if unique and md5sum in IMPORTED_FILE:
-                logging.warning(f'File {input_filepath} already imported: skipping duplicate')
+                logging.warning(f'File {original_filepath} already imported: skipping duplicate')
                 already_processed = True
+    
     
     if not already_processed:
         # res = True if input file was successfully processed, False if processing failed and None if no processing was needed
-        res, stdout, stderr, code, output_path = process_file(input_filepath, output_root, input_root=input_root, merge_dir=merge_dir, remove_source=remove_source)
+        res, stdout, stderr, code, output_path = process_file(input_filepath, output_root, original_filepath=original_filepath, input_root=input_root, merge_dir=merge_dir, remove_source=remove_source)
         if res != False and unique:
             IMPORTED_FILE.append(md5sum)
     else:
@@ -262,9 +269,6 @@ def process_file_recursively(input_filepath, input_root, output_root, parent_in=
         code = None
         output_path = 'n/a'
 
-    original_filepath = input_filepath
-    if parent_in and parent_out:
-        original_filepath = input_filepath.replace(parent_out, parent_in)
     if summary_file:
         summary_file.writerow([os.path.normpath(original_filepath), filename, extension, output_path, mimetype, size, md5sum, code, '' if res is None else not res, stdout.strip() if not res and stdout else '', stderr.strip() if not res and stdout else ''])
 
@@ -280,17 +284,19 @@ def process_file_recursively(input_filepath, input_root, output_root, parent_in=
 
 def process_directory(input_directory, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
     error_number = 0
+    # if input_directory is empty and keep_empty_dir flag is enabled
     if keep_empty_dir and os.path.isdir(input_directory) and not os.listdir(input_directory):
         relative_path = os.path.relpath(input_directory, input_root)
         output_directory = os.path.normpath(os.path.join(output_root, relative_path))
         if os.path.exists(output_directory) and input_directory != output_directory:
             logging.warning(f'Can not load empty directory "{input_directory}" to "{output_directory}" as destination path already exists')
+    
     for child in os.listdir(input_directory):
         child_path = os.path.join(input_directory, child)
         if os.path.isdir(child_path):
-            error_number += process_directory(child_path, input_directory, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_directory(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
         else:
-            error_number += process_file_recursively(child_path, input_directory, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_file_recursively(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
     return error_number
 
 def process_target(target, output_directory=None, summary_filepath=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
