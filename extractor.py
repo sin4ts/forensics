@@ -236,6 +236,12 @@ def process_file(input_filepath, output_root, input_root=None, original_filepath
             os.unlink(input_filepath)
     return res, stdout, stderr, code, output_filepath
 
+def path_is_parent(parent_path, child_path):
+    # Smooth out relative path names, note: if you are concerned about symbolic links, you should use os.path.realpath too
+    parent_path = os.path.abspath(parent_path)
+    child_path = os.path.abspath(child_path)
+    return os.path.commonpath([parent_path]) == os.path.commonpath([parent_path, child_path])
+
 def process_file_recursively(input_filepath, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, hash_max_size=None, merge_dir=False, keep_empty_dir=False, unique=False):
     '''
     input_root is None if there is only 1 file to process overall'''
@@ -253,14 +259,16 @@ def process_file_recursively(input_filepath, input_root, output_root, parent_in=
         if not hash_max_size or size <= hash_max_size:
             md5sum = utils.compute_md5sum(input_filepath)
             if unique and md5sum in IMPORTED_FILE:
-                logging.warning(f'File {original_filepath} already imported: skipping duplicate')
+                logging.warning(f'File {os.path.normpath(original_filepath)} already imported: skipping duplicate')
                 already_processed = True
     
     
     if not already_processed:
         # res = True if input file was successfully processed, False if processing failed and None if no processing was needed
         res, stdout, stderr, code, output_path = process_file(input_filepath, output_root, original_filepath=original_filepath, input_root=input_root, merge_dir=merge_dir, remove_source=remove_source)
-        if res != False and unique:
+        if res == False:
+            error_number += 1
+        elif res != False and unique:
             IMPORTED_FILE.append(md5sum)
     else:
         res = None
@@ -268,21 +276,21 @@ def process_file_recursively(input_filepath, input_root, output_root, parent_in=
         stderr = None
         code = None
         output_path = 'n/a'
+        # if path_is_parent(output_root, input_filepath):
+        #     os.unlink(input_filepath)
 
     if summary_file:
         summary_file.writerow([os.path.normpath(original_filepath), filename, extension, output_path, mimetype, size, md5sum, code, '' if res is None else not res, stdout.strip() if not res and stdout else '', stderr.strip() if not res and stdout else ''])
 
-    if res == False:
-        res += 1
     
     if res and output_path:
         if os.path.isdir(output_path):
-            error_number += process_directory(output_path, output_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_directory_recursively(output_path, output_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
         else:
             error_number += process_file_recursively(output_path, output_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
     return error_number
 
-def process_directory(input_directory, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
+def process_directory_recursively(input_directory, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
     error_number = 0
     # if input_directory is empty and keep_empty_dir flag is enabled
     if keep_empty_dir and os.path.isdir(input_directory) and not os.listdir(input_directory):
@@ -294,7 +302,7 @@ def process_directory(input_directory, input_root, output_root, parent_in=None, 
     for child in os.listdir(input_directory):
         child_path = os.path.join(input_directory, child)
         if os.path.isdir(child_path):
-            error_number += process_directory(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_directory_recursively(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
         else:
             error_number += process_file_recursively(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
     return error_number
@@ -320,7 +328,7 @@ def process_target(target, output_directory=None, summary_filepath=None, remove_
         if os.path.isfile(target):
             error_number += process_file_recursively(target, None, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
         else:
-            error_number += process_directory(target, target, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_directory_recursively(target, target, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
     return output_directory, summary_filepath, error_number
     
 
