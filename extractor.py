@@ -276,8 +276,8 @@ def process_file_recursively(input_filepath, input_root, output_root, parent_in=
         stderr = None
         code = None
         output_path = 'n/a'
-        # if path_is_parent(output_root, input_filepath):
-        #     os.unlink(input_filepath)
+        if path_is_parent(output_root, input_filepath):
+            os.unlink(input_filepath)
 
     if summary_file:
         summary_file.writerow([os.path.normpath(original_filepath), filename, extension, output_path, mimetype, size, md5sum, code, '' if res is None else not res, stdout.strip() if not res and stdout else '', stderr.strip() if not res and stdout else ''])
