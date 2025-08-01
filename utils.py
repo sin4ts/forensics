@@ -63,25 +63,45 @@ def parse_boolean_string(data, none=False):
 def get_random(length=20, choice='abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890-+=*!@#$%^&(){}[]|:;,.?/"\''):
     return ''.join((secrets.choice(choice) for i in range(length)))
 
-def do_system_command(command, stdin=None, env={}):
+def do_system_command(command, stdin=None, stdout=None, stderr=None, env={}):
     '''
     stdin can be a file descriptor
     '''
     for key, value in os.environ.items():
         env[key] = value
+
     logging.debug('Executing system command: ' + ' '.join([f'"{X}"' if ' ' in X else X for X in command]))
-    process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.PIPE, stdin=stdin, env=env)
-    stdout, stderr = process.communicate()
+    if not stdout:
+        stdout_fd = subprocess.PIPE
+    else:
+        stdout_fd = stdout
+    if not stderr:
+        stderr_fd = subprocess.PIPE
+    else:
+        stderr_fd = stderr
+    process = subprocess.Popen(command, stdout=stdout_fd, stderr=stderr_fd, stdin=stdin, env=env)
+    stdout_output, stderr_output = process.communicate()
     return_code = process.returncode
-    if stdout is None:
-        stdout = ''
+    if stdout:
+        stdout_output = None
     else:
-        stdout = stdout.decode()
-    if stderr is None:
-        stderr = ''
+        if stdout_output is None:
+            stdout_output = ''
+        else:
+            stdout_output = stdout_output.decode()
+        if stderr_output is None:
+            stderr_output = ''
+        else:
+            stderr_output = stderr_output.decode()
+        return stdout_output, stderr_output, return_code
+    if stderr:
+        stderr_output = None
     else:
-        stderr = stderr.decode()
-    return stdout, stderr, return_code
+        if stderr_output is None:
+            stderr_output = ''
+        else:
+            stderr_output = stderr_output.decode()
+        return stdout_output, stderr_output, return_code
 
 def compute_md5sum(filepath):
     with open(filepath, 'rb') as f:

@@ -64,6 +64,7 @@ def explode_filepath(filepath):
     filename = file
     extension = .ext
     '''
+    mimetype = magic.from_file(filepath, mime=True).lower().strip()
     dirname = os.path.dirname(filepath)
     basename = os.path.basename(filepath)
     filename = basename
@@ -78,7 +79,10 @@ def explode_filepath(filepath):
         if not extension:
             extension = f'.{basename.split(".")[-1]}'
             filename = basename[:-len(extension)]
-    return dirname, basename, filename, extension
+    if mimetype == 'application/gzip' and extension.endswith('.gz') and len(extension) > 3:
+        filename += extension[:-3]
+        extension = '.gz'
+    return dirname, basename, filename, extension, mimetype
         
 def extract_zst(filepath, output_root, relative_path, filename, extension, basename, merge_dir=False):
     '''
@@ -146,13 +150,15 @@ def extract_gz(filepath, output_root, relative_path, filename, extension, basena
     '''
     compression only
     '''
-    output_directory = get_next_available_path([output_root, relative_path, filename], mkdir=True, merge_dir=merge_dir)
-    stdout, stderr, code = utils.do_system_command([CONFIG['bin.tar'], 'xzvf', filepath, '-C', output_directory])
+    output_filepath = get_next_available_path([output_root, relative_path, filename], mkdir_parent=True, merge_dir=merge_dir)
+    stdout_fd = open(output_filepath, 'wb')
+    _, stderr, code = utils.do_system_command([CONFIG['bin.gzip'], '-c', '-f', '-k', '-d', filepath], stdout=stdout_fd)
+    stdout_fd.close()
     if code == 0:
-        return True, stdout, stderr, code, output_directory
+        return True, None, stderr, code, output_filepath
     else:
         print(stderr)
-        return False, stdout, stderr, code, output_directory
+        return False, None, stderr, code, output_filepath
 
 def extract_tgz(filepath, output_root, relative_path, filename, extension, basename, merge_dir=False):
     '''
@@ -184,20 +190,18 @@ def process_file(input_filepath, output_root, input_root=None, original_filepath
     '''
     if not original_filepath:
         original_filepath = input_filepath
-    logging.info(f'Processing {os.path.normpath(original_filepath)}')
     if input_root:
         relative_path = os.path.dirname(os.path.relpath(input_filepath, input_root))
     else:
         relative_path = None
 
     # here filename is basename without the extension
-    _, basename, filename, extension = explode_filepath(input_filepath)
+    _, basename, filename, extension, mimetype = explode_filepath(input_filepath)
     res = None
     stderr = None
     stdout = None
     code = None
     output_filepath = None
-    mimetype = magic.from_file(input_filepath, mime=True).lower().strip()
 
     if (not mimetype_whitelist or mimetype in mimetype_whitelist) and (not mimetype_blacklist or mimetype not in mimetype_blacklist):
         if mimetype == 'application/zstd':
@@ -237,40 +241,29 @@ def process_file(input_filepath, output_root, input_root=None, original_filepath
     return res, stdout, stderr, code, output_filepath
 
 def path_is_parent(parent_path, child_path):
-    # Smooth out relative path names, note: if you are concerned about symbolic links, you should use os.path.realpath too
     parent_path = os.path.abspath(parent_path)
     child_path = os.path.abspath(child_path)
     return os.path.commonpath([parent_path]) == os.path.commonpath([parent_path, child_path])
 
-def process_file_recursively(input_filepath, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, hash_max_size=None, merge_dir=False, keep_empty_dir=False, unique=False):
+def process_file_recursively(input_filepath, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False, skip_hashing=-1, log=True):
     '''
     input_root is None if there is only 1 file to process overall'''
     error_number = 0
-    already_processed = False
     original_filepath = input_filepath
     if parent_in and parent_out:
         original_filepath = input_filepath.replace(parent_out, parent_in)
-    if summary_file:
-        mimetype = magic.from_file(input_filepath, mime=True)
-        _, filename, _, extension = explode_filepath(input_filepath)
-    if summary_file or unique:
-        size = os.path.getsize(input_filepath)
-        md5sum = None
-        if not hash_max_size or size <= hash_max_size:
-            md5sum = utils.compute_md5sum(input_filepath)
-            if unique and md5sum in IMPORTED_FILE:
-                logging.warning(f'File {os.path.normpath(original_filepath)} already imported: skipping duplicate')
-                already_processed = True
+
+    if log:
+        logging.info(f'Processing {os.path.normpath(original_filepath)}')
+
+    _, filename, _, extension, mimetype = explode_filepath(input_filepath)
+    size = os.path.getsize(input_filepath)
+    md5sum = None
+    if skip_hashing < 0 or (skip_hashing > 0 and size <= skip_hashing):
+        md5sum = utils.compute_md5sum(input_filepath)
     
-    
-    if not already_processed:
-        # res = True if input file was successfully processed, False if processing failed and None if no processing was needed
-        res, stdout, stderr, code, output_path = process_file(input_filepath, output_root, original_filepath=original_filepath, input_root=input_root, merge_dir=merge_dir, remove_source=remove_source)
-        if res == False:
-            error_number += 1
-        elif res != False and unique:
-            IMPORTED_FILE.append(md5sum)
-    else:
+    if unique and md5sum and md5sum in IMPORTED_FILE:
+        logging.warning(f'File {os.path.normpath(original_filepath)} already imported: skipping duplicate')
         res = None
         stdout = None
         stderr = None
@@ -278,19 +271,27 @@ def process_file_recursively(input_filepath, input_root, output_root, parent_in=
         output_path = 'n/a'
         if path_is_parent(output_root, input_filepath):
             os.unlink(input_filepath)
-
-    if summary_file:
-        summary_file.writerow([os.path.normpath(original_filepath), filename, extension, output_path, mimetype, size, md5sum, code, '' if res is None else not res, stdout.strip() if not res and stdout else '', stderr.strip() if not res and stdout else ''])
-
+    else:
+        # res = True if input file was successfully processed, False if processing failed and None if no processing was needed
+        res, stdout, stderr, code, output_path = process_file(input_filepath, output_root, original_filepath=original_filepath, input_root=input_root, merge_dir=merge_dir, remove_source=remove_source)
+        if res == False:
+            error_number += 1
+        elif res != False and unique and md5sum:
+            IMPORTED_FILE.append(md5sum)
     
+    if summary_file:
+        summary_file.writerow([os.path.normpath(original_filepath), input_filepath, filename, extension, output_path, mimetype, size, '' if md5sum is None else md5sum, code, '' if res is None else not res, stdout.strip() if not res and stdout else '', stderr.strip() if not res and stdout else ''])
+
     if res and output_path:
         if os.path.isdir(output_path):
-            error_number += process_directory_recursively(output_path, output_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_directory_recursively(output_path, output_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique, skip_hashing=skip_hashing)
         else:
-            error_number += process_file_recursively(output_path, output_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            # next line won't work if there a relative path
+            original_filepath = os.path.join(original_filepath, os.path.basename(output_path))
+            error_number += process_file_recursively(output_path, output_root, output_root, parent_in=original_filepath, parent_out=output_path, summary_file=summary_file, remove_source=False, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique, skip_hashing=skip_hashing, log=True)
     return error_number
 
-def process_directory_recursively(input_directory, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
+def process_directory_recursively(input_directory, input_root, output_root, parent_in=None, parent_out=None, summary_file=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False, skip_hashing=-1):
     error_number = 0
     # if input_directory is empty and keep_empty_dir flag is enabled
     if keep_empty_dir and os.path.isdir(input_directory) and not os.listdir(input_directory):
@@ -302,12 +303,12 @@ def process_directory_recursively(input_directory, input_root, output_root, pare
     for child in os.listdir(input_directory):
         child_path = os.path.join(input_directory, child)
         if os.path.isdir(child_path):
-            error_number += process_directory_recursively(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_directory_recursively(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique, skip_hashing=skip_hashing)
         else:
-            error_number += process_file_recursively(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_file_recursively(child_path, input_root, output_root, parent_in=parent_in, parent_out=parent_out, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique, skip_hashing=skip_hashing)
     return error_number
 
-def process_target(target, output_directory=None, summary_filepath=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False):
+def process_target(target, output_directory=None, summary_filepath=None, remove_source=False, merge_dir=False, keep_empty_dir=False, unique=False, skip_hashing=-1):
     global CONFIG
 
     error_number = 0
@@ -323,14 +324,23 @@ def process_target(target, output_directory=None, summary_filepath=None, remove_
     
     with open(summary_filepath, 'w') as fd:
         summary_file = csv.writer(fd, delimiter=',')
-        summary_file.writerow(['Input Full Path', 'Input File Name', 'Input File Extension', 'Output Full Path', 'Mime Type', 'Size', 'MD5', 'Code', 'Error', 'Stdout', 'Stderr'])
+        summary_file.writerow(['Input Full Path', 'Intermediate Full Path', 'Input File Name', 'Input File Extension', 'Output Full Path', 'Mime Type', 'Size', 'MD5', 'Code', 'Error', 'Stdout', 'Stderr'])
 
         if os.path.isfile(target):
-            error_number += process_file_recursively(target, None, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_file_recursively(target, None, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique, skip_hashing=skip_hashing)
         else:
-            error_number += process_directory_recursively(target, target, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique)
+            error_number += process_directory_recursively(target, target, output_directory, summary_file=summary_file, remove_source=remove_source, merge_dir=merge_dir, keep_empty_dir=keep_empty_dir, unique=unique, skip_hashing=skip_hashing)
     return output_directory, summary_filepath, error_number
     
+def check_config():
+    check_list = ['bin.gzip', 'bin.sevenz', 'bin.tar', 'bin.zstd', 'bin.unzip']
+    res = True
+    for check in check_list:
+        value = CONFIG[check]
+        if value and not os.path.exists(value):
+            logging.error(f'{value} not found')
+            res = False
+    return res
 
 if __name__ == '__main__':
     # Parse commmand line arguments
@@ -344,6 +354,8 @@ if __name__ == '__main__':
     # merge feature is unsecure at this time - do not use
     # parser.add_argument('-m', '--merge_dir', action='store_true', help='Merge directory in case of name conflict')
     parser.add_argument('-s', '--summary', help='Summary file path')
+    parser.add_argument('-S', '--skip-binary-check', action='store_true', help='Skip binary check')
+    parser.add_argument('-H', '--skip-hashing', default=-1, type=int, help='Skip file hashing for file bigger than value provided (in bytes). If set to 0, skip hashing for all files. All file will be hashed if set to a negative value.')
     parser.add_argument('-u', '--unique', action='store_true', help='Don\'t import duplicated files')
     parser.add_argument('input', nargs='+', help='File or folder to import')
 
@@ -364,10 +376,17 @@ if __name__ == '__main__':
     else:
         init_logging(CONFIG['general.log_directory'], level=logging.INFO)
 
+    if args.unique and args.skip_hashing:
+        logging.error('Argument --unique and --skip-hashing can\t be used together')
+        sys.exit(1)
+    
+    if not args.skip_binary_check and not check_config():
+        sys.exit(1)
+
     error_number = 0
     for target in args.input:
         logging.info(f'Loading evidence from {target}')
-        output_directory, summary_filepath, target_error_number = process_target(target, output_directory=args.output, summary_filepath=args.summary, keep_empty_dir=args.keep_empty_dir, unique=args.unique)
+        output_directory, summary_filepath, target_error_number = process_target(target, output_directory=args.output, summary_filepath=args.summary, keep_empty_dir=args.keep_empty_dir, unique=args.unique, skip_hashing=args.skip_hashing)
         error_number += target_error_number
     logging.info(f'Evidence loaded to {output_directory}')
     if summary_filepath:
